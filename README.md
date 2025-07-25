@@ -183,6 +183,9 @@ iseble-azure/
 - ✅ **Deployment Validation** and status reporting
 
 ### Phase 3: ISE Configuration (03-configure-ise.yml)
+> **Note**
+> This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
+
 - ✅ **SCP Repository** creation for backups/patches
 - ✅ **Network Access Devices** (switches, APs) registration
 - ✅ **Endpoint Identity Groups** (Corporate, Guest, IoT, BYOD)
@@ -191,6 +194,9 @@ iseble-azure/
 - ✅ **Authorization Policies** for network access control
 
 ### Phase 4: VPN (Optional) (04-create-vpn.yml)
+> **Note**
+> This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
+
 - ✅ **VPN Gateway** public IP
 - ✅ **Virtual Network Gateway**
 - ✅ **Local Network Gateway**
@@ -199,7 +205,7 @@ iseble-azure/
 ## 🏗 Architecture
 
 ### Network Configuration
-- **Region**: westus
+- **Region**: westus2
 - **VNet**: 192.168.100.0/23
 - **Private Subnet**: 192.168.100.0/24 (for ISE)
 - **Gateway Subnet**: 192.168.101.0/24 (for VPN)

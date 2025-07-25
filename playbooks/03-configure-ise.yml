@@ -1,4 +1,6 @@
 ---
+# NOTE: This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
+
 - name: Configure Cisco ISE after deployment
   hosts: localhost
   connection: local
