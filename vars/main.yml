@@ -1,0 +1,459 @@
+---
+# Project Configuration
+project_name: "iseble-azure"
+owner: "{{ lookup('env', 'USER') }}"
+deployment_environment: "production"
+# Python interpreter - auto-detected by Ansible, or set via environment variable
+ansible_python_interpreter: "{{ lookup('env', 'ANSIBLE_PYTHON_INTERPRETER', default='auto') }}"
+
+# Azure Configuration
+azure:
+  region: "westus2"
+  resource_group: "rg-{{ project_name }}"
+  subscription_id: "{{ lookup('env', 'AZURE_SUBSCRIPTION_ID') }}"
+  tenant_id: "{{ lookup('env', 'AZURE_TENANT') }}"
+  client_id: "{{ lookup('env', 'AZURE_CLIENT_ID') }}"
+  secret: "{{ lookup('env', 'AZURE_SECRET') }}"
+
+# Network Configuration
+network:
+  vnet_name: "vnet-{{ project_name }}"
+  vnet_cidr: "192.168.100.0/23"
+  private_subnet_name: "subnet-private"
+  private_subnet_cidr: "192.168.100.0/24"
+  gateway_subnet_name: "GatewaySubnet"
+  gateway_subnet_cidr: "192.168.101.0/24"
+  nsg_name: "nsg-{{ project_name }}"
+
+# ISE Configuration
+ise:
+  vm_name: "ise-{{ project_name }}"
+  vm_size: "Standard_D4s_v3"
+  admin_username: "iseadmin"
+  os_disk_size_gb: 300
+  os_disk_type: "Premium_LRS"
+  private_ip: "192.168.100.10"
+  public_ip_name: "pip-{{ project_name }}"
+  nic_name: "nic-{{ project_name }}"
+
+  # ISE Image Reference
+  image:
+    publisher: "cisco"
+    offer: "cisco-ise-virtual"
+    sku: "cisco-ise_3_4"
+    version: "latest"
+
+  # ISE Initial Configuration
+  hostname: "ise-azure"
+  domain_name: "{{ lookup('env', 'ISE_DOMAIN', default='andremakes.com') }}"
+  dns_server: "8.8.8.8"
+  ntp_server: "time.windows.com"
+  timezone: "UTC"
+  password: "{{ lookup('env', 'ISE_PASSWORD', default='ISEisC00L') }}"
+
+  # User data configuration
+  user_data: |
+    hostname=ise-azure
+    primarynameserver=8.8.8.8
+    dnsdomain=andremakes.com
+    primaryntpserver=time.windows.com
+    timezone=UTC
+    password=ISEisC00L
+    ersapi=yes
+    pxGrid=yes
+    pxgrid_cloud=no
+
+  # ISE Services
+  ers_api: true
+  open_api: true
+  pxgrid: false
+  pxgrid_cloud: false
+
+# ISE Configuration Settings
+ise_config:
+  # API Connection Settings
+  api_username: "{{ ise.admin_username }}"
+  api_password: "{{ ise.password }}"
+  verify_ssl: false
+  debug: false
+
+  # Repository Configuration
+  repositories:
+    - name: "backup-repository"
+      protocol: "SCP"
+      server_name: "{{ lookup('env', 'SCP_SERVER', default='backup.andremakes.com') }}"
+      path: "/ise-backups/"
+      username: "{{ lookup('env', 'SCP_USERNAME', default='ise-backup') }}"
+      password: "{{ lookup('env', 'SCP_PASSWORD', default='BackupPass123!') }}"
+      description: "Primary backup repository for ISE configurations"
+      enable_pki: false
+
+    - name: "patch-repository"
+      protocol: "SCP"
+      server_name: "{{ lookup('env', 'PATCH_SERVER', default='patches.andremakes.com') }}"
+      path: "/cisco-patches/"
+      username: "{{ lookup('env', 'PATCH_USERNAME', default='patch-user') }}"
+      password: "{{ lookup('env', 'PATCH_PASSWORD', default='PatchPass123!') }}"
+      description: "Software patches and updates repository"
+      enable_pki: false
+
+  # Network Access Devices
+  network_devices:
+    - name: "Core-Switch-01"
+      ip_address: "192.168.1.10"
+      shared_secret: "{{ lookup('env', 'SWITCH_SECRET', default='SharedSecret123!') }}"
+      description: "Core network switch"
+      device_type: "Device Type#All Device Types#Switch"
+      location: "All Locations#Headquarters#Network Closet"
+      authentication_settings:
+        enable_key_wrap: false
+        encryption_key: ""
+        message_authenticator_code_key: ""
+        radius_shared_secret: "{{ lookup('env', 'RADIUS_SECRET', default='RadiusSecret123!') }}"
+      snmp_settings:
+        version: "TWO_C"
+        community_string: "{{ lookup('env', 'SNMP_COMMUNITY', default='public') }}"
+        polling_interval: 3600
+        link_trap_query: true
+        mac_trap_query: true
+        originating_policy_services_node: "Auto"
+      trustsec_settings:
+        device_authentication_settings:
+          sga_device_id: "Core-Switch-01"
+          sga_device_password: "{{ lookup('env', 'SGA_PASSWORD', default='SGAPass123!') }}"
+        sga_notification_and_updates:
+          downlaod_environment_data_every_x_seconds: 86400
+          downlaod_peer_authorization_policy_every_x_seconds: 86400
+          re_authentication_every_x_seconds: 86400
+          download_sgacl_lists_every_x_seconds: 86400
+        device_configuration_deployment:
+          include_when_deploying_sgt_updates: true
+          exec_mode_username: "admin"
+          exec_mode_password: "{{ lookup('env', 'SWITCH_EXEC_PASSWORD', default='ExecPass123!') }}"
+          enable_mode_password: "{{ lookup('env', 'SWITCH_ENABLE_PASSWORD', default='EnablePass123!') }}"
+
+    - name: "Access-Point-01"
+      ip_address: "192.168.1.20"
+      shared_secret: "{{ lookup('env', 'AP_SECRET', default='APSecret123!') }}"
+      description: "Wireless access point"
+      device_type: "Device Type#All Device Types#Wireless LAN Controller"
+      location: "All Locations#Headquarters#Office Floor 1"
+      authentication_settings:
+        enable_key_wrap: false
+        radius_shared_secret: "{{ lookup('env', 'AP_RADIUS_SECRET', default='APRadiusSecret123!') }}"
+
+  # Endpoint Identity Groups
+  endpoint_groups:
+    - name: "Corporate-Devices"
+      description: "Company managed devices including laptops, desktops, and mobile devices"
+      parent_group_id: ""
+
+    - name: "Guest-Devices"
+      description: "Guest and visitor devices with limited network access"
+      parent_group_id: ""
+
+    - name: "IoT-Devices"
+      description: "Internet of Things devices like sensors, cameras, and smart devices"
+      parent_group_id: ""
+
+    - name: "BYOD-Devices"
+      description: "Bring Your Own Device - Personal devices registered by employees"
+      parent_group_id: ""
+
+  # Guest Portal Configuration
+  guest_portal:
+    name: "Guest-Access-Portal"
+    description: "Self-service guest registration portal"
+    portal_type: "SELF_REGISTERED"
+    settings:
+      portal_settings:
+        https_port: 8443
+        allowed_interfaces: ["GigabitEthernet 0"]
+        certificate_group_tag: "Default Portal Certificate Group"
+        authentication_method: "GUEST"
+        assigned_guest_type_for_employee: "Contractor (default)"
+        display_lang: "USEMESSAGECATALOG"
+        fallback_language: "USEMESSAGECATALOG"
+        always_used_language: ""
+      login_page_settings:
+        require_access_code: false
+        access_code: ""
+        allow_guest_to_create_accounts: true
+        allow_forgot_password: true
+        allow_guest_to_change_password: true
+        allow_alternate_guest_portal: false
+        alternate_guest_portal: ""
+        allow_guest_to_use_social_accounts: false
+        allow_show_guest_form: true
+        social_configs: []
+        aup_display: "ONPAGE"
+        include_aup: true
+        require_aup_acceptance: true
+        require_scrolling: false
+        max_failed_attempts_before_rate_limit: 5
+        time_between_logins_during_rate_limit: 60
+      self_reg_page_settings:
+        account_validity_duration: 1
+        account_validity_time_units: "DAYS"
+        allow_grace_access: false
+        assign_guests_to_guest_type: "Sponsor (default)"
+        aup_display: "ONPAGE"
+        include_aup: true
+        require_aup_acceptance: true
+        require_scrolling: false
+        field_user_name:
+          include: true
+          require: true
+        field_first_name:
+          include: true
+          require: true
+        field_last_name:
+          include: true
+          require: true
+        field_email_addr:
+          include: true
+          require: true
+        field_phone_no:
+          include: true
+          require: false
+        field_company:
+          include: true
+          require: false
+        field_location:
+          include: false
+          require: false
+        field_sms_provider:
+          include: false
+          require: false
+        field_person_being_visited:
+          include: false
+          require: false
+        field_reason_for_visit:
+          include: false
+          require: false
+      guest_change_password_settings:
+        allow_change_passwd_at_first_login: false
+      guest_device_registration_settings:
+        auto_register_guest_devices: true
+        allow_guests_to_register_devices: true
+      byod_settings:
+        byod_welcome_settings:
+          enable_byod: true
+          enable_guest_access: true
+          require_mdm: false
+          include_aup: true
+          aup_display: "ONPAGE"
+          require_aup_acceptance: true
+          require_scrolling: false
+        byod_registration_settings:
+          show_device_id: true
+          end_point_identity_group_id: ""
+        byod_registration_success_settings:
+          success_redirect: "ORIGINALURL"
+          redirect_url: ""
+      post_login_banner_settings:
+        include_post_access_banner: false
+      post_access_banner_settings:
+        include_post_access_banner: false
+      auth_success_settings:
+        success_redirect: "ORIGINALURL"
+        redirect_url: ""
+      support_info_settings:
+        include_support_info_page: true
+        include_mac_addr: true
+        include_ip_address: true
+        include_browser_user_agent: true
+        include_policy_server: true
+        include_failure_code: true
+        empty_field_display: "HIDE"
+        default_empty_field_value: ""
+    customizations:
+      portal_theme:
+        theme_data: "Blue"
+      portal_tweak_settings:
+        banner_color: "#1B4F72"
+        banner_text_color: "#FFFFFF"
+        page_background_color: "#FFFFFF"
+        page_label_and_text_color: "#000000"
+      global_customizations:
+        banner_title: "Welcome to Guest Network"
+        contact_text: "For assistance, contact IT Support at it-support@andremakes.com"
+        footer_element: "© 2024 AndreMakes Company. All rights reserved."
+
+  # BYOD Portal Configuration
+  byod_portal:
+    name: "BYOD-Registration-Portal"
+    description: "Bring Your Own Device registration portal for employees"
+    portal_type: "MYDEVICE"
+    settings:
+      portal_settings:
+        https_port: 8443
+        allowed_interfaces: ["GigabitEthernet 0"]
+        certificate_group_tag: "Default Portal Certificate Group"
+        endpoint_identity_group: "Corporate-Devices"
+        display_lang: "USEMESSAGECATALOG"
+        fallback_language: "USEMESSAGECATALOG"
+        always_used_language: ""
+      login_page_settings:
+        max_failed_attempts_before_rate_limit: 5
+        time_between_logins_during_rate_limit: 60
+        include_aup: true
+        aup_display: "ONPAGE"
+        require_aup_acceptance: true
+        require_scrolling: false
+        social_configs: []
+      employee_change_password_settings:
+        allow_employee_to_change_pwd: true
+      post_login_banner_settings:
+        include_post_access_banner: false
+      post_access_banner_settings:
+        include_post_access_banner: false
+      support_info_settings:
+        include_support_info_page: true
+        include_mac_addr: true
+        include_ip_address: true
+        include_browser_user_agent: true
+        include_policy_server: true
+        include_failure_code: true
+        empty_field_display: "HIDE"
+        default_empty_field_value: ""
+    customizations:
+      portal_theme:
+        theme_data: "Green"
+      portal_tweak_settings:
+        banner_color: "#1E8449"
+        banner_text_color: "#FFFFFF"
+        page_background_color: "#FFFFFF"
+        page_label_and_text_color: "#000000"
+      global_customizations:
+        banner_title: "Employee Device Registration"
+        contact_text: "For technical support, contact IT at it-support@andremakes.com"
+        footer_element: "© 2024 AndreMakes Company. All rights reserved."
+
+  # Authorization Policies
+  authorization_policies:
+    - policy_name: "Corporate_Device_Access"
+      description: "Full network access for corporate managed devices"
+      rule:
+        condition:
+          condition_type: "ConditionAndBlock"
+          conditions:
+            - condition_type: "ConditionReference"
+              condition_id: "EndPoints:LogicalProfile EQUALS Corporate-Devices"
+        result:
+          - "PermitAccess"
+          - "DACL:PERMIT_ALL_TRAFFIC"
+
+    - policy_name: "Guest_Device_Access"
+      description: "Limited internet access for guest devices"
+      rule:
+        condition:
+          condition_type: "ConditionAndBlock"
+          conditions:
+            - condition_type: "ConditionReference"
+              condition_id: "EndPoints:LogicalProfile EQUALS Guest-Devices"
+        result:
+          - "PermitAccess"
+          - "DACL:PERMIT_INTERNET_ONLY"
+
+    - policy_name: "BYOD_Device_Access"
+      description: "Controlled access for employee personal devices"
+      rule:
+        condition:
+          condition_type: "ConditionAndBlock"
+          conditions:
+            - condition_type: "ConditionReference"
+              condition_id: "EndPoints:LogicalProfile EQUALS BYOD-Devices"
+        result:
+          - "PermitAccess"
+          - "DACL:PERMIT_LIMITED_ACCESS"
+
+# Storage Configuration
+storage:
+  account_name: "st{{ project_name | replace('-', '') }}"
+  account_type: "Standard_LRS"
+  kind: "StorageV2"
+
+# SSH Configuration
+ssh:
+  key_name: "iseble-azure"
+  key_path: "../files/ssh_keys/"
+  public_key_file: "../files/ssh_keys/iseble-azure.pub"
+  private_key_file: "../files/ssh_keys/iseble-azure"
+
+# VPN Configuration (Optional)
+vpn:
+  enabled: false
+  gateway_name: "vng-{{ project_name }}"
+  public_ip_name: "pip-vpn-{{ project_name }}"
+  local_network_gateway_name: "lng-{{ project_name }}"
+  connection_name: "vpn-{{ project_name }}"
+  local_address_space: "10.0.0.0/24"
+  shared_key: "{{ lookup('env', 'VPN_SHARED_KEY', default='YourSharedKey123!') }}"
+
+# Resource Tags
+resource_tags:
+  project: "{{ project_name | string }}"
+  owner: "{{ owner | string }}"
+  environment: "{{ deployment_environment | string }}"
+  created_by: "ansible"
+  created_date: "{{ '%Y-%m-%d' | strftime | string }}"
+
+# Security Rules
+security_rules:
+  - name: "SSH"
+    protocol: "Tcp"
+    source_address_prefix: "*"
+    destination_port_range: "22"
+    access: "Allow"
+    priority: 100
+    direction: "Inbound"
+  - name: "HTTPS"
+    protocol: "Tcp"
+    source_address_prefix: "*"
+    destination_port_range: "443"
+    access: "Allow"
+    priority: 101
+    direction: "Inbound"
+  - name: "HTTP"
+    protocol: "Tcp"
+    source_address_prefix: "*"
+    destination_port_range: "80"
+    access: "Allow"
+    priority: 102
+    direction: "Inbound"
+  - name: "ISE-ERS"
+    protocol: "Tcp"
+    source_address_prefix: "*"
+    destination_port_range: "9060"
+    access: "Allow"
+    priority: 103
+    direction: "Inbound"
+  - name: "ISE-PXGrid"
+    protocol: "Tcp"
+    source_address_prefix: "*"
+    destination_port_range: "8910"
+    access: "Allow"
+    priority: 104
+    direction: "Inbound"
+  - name: "ISE-RADIUS"
+    protocol: "Tcp"
+    source_address_prefix: "*"
+    destination_port_range: "1812"
+    access: "Allow"
+    priority: 105
+    direction: "Inbound"
+  - name: "ISE-RADIUS-Accounting"
+    protocol: "Tcp"
+    source_address_prefix: "*"
+    destination_port_range: "1813"
+    access: "Allow"
+    priority: 106
+    direction: "Inbound"
+  - name: "AllowAllOutbound"
+    protocol: "*"
+    source_address_prefix: "*"
+    destination_address_prefix: "*"
+    access: "Allow"
+    priority: 100
+    direction: "Outbound"

@@ -1,0 +1,34 @@
+# Iseble for Azure - Python Requirements
+# Install with: pip install -r requirements.txt
+
+# Core Ansible
+ansible>=8.0.0
+
+# Cisco ISE SDK - Required for cisco.ise collection
+ciscoisesdk>=2.0.0
+
+# Azure SDK components - Required for azure.azcollection
+azure-cli-core
+azure-common
+azure-mgmt-resource
+azure-mgmt-network
+azure-mgmt-compute
+azure-mgmt-storage
+azure-mgmt-keyvault
+azure-mgmt-authorization
+azure-identity
+azure-mgmt-subscription
+
+# SSH and Cryptography
+paramiko>=2.7.0
+cryptography>=3.0.0
+bcrypt>=3.2.0
+pynacl>=1.4.0
+
+# JSON processing and utilities
+jmespath>=0.10.0
+requests>=2.25.0
+
+# Development and testing (optional)
+ansible-lint>=6.0.0
+yamllint>=1.26.0

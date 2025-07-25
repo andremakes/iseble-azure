@@ -1,0 +1,323 @@
+---
+- name: Destroy Azure ISE Deployment Resources
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    - name: Confirm resource deletion
+      ansible.builtin.pause:
+        prompt: |
+          WARNING: This will delete ALL resources in the resource group '{{ azure.resource_group }}'
+
+          This includes:
+          - Virtual Machine: {{ ise.vm_name }}
+          - Virtual Network: {{ network.vnet_name }}
+          - Network Security Group: {{ network.nsg_name }}
+          - Storage Account: {{ storage.account_name }}
+          - Public IP Addresses
+          - Network Interfaces
+          {% if vpn.enabled %}
+          - VPN Gateway: {{ vpn.gateway_name }}
+          - Local Network Gateway: {{ vpn.local_network_gateway_name }}
+          - VPN Connection: {{ vpn.connection_name }}
+          {% endif %}
+
+          Type 'yes' to confirm deletion:
+      register: resource_deletion_prompt
+
+    - name: Validate confirmation response
+      ansible.builtin.fail:
+        msg: "Resource deletion cancelled. You must type 'yes' to confirm deletion of ALL resources."
+      when: resource_deletion_prompt.user_input | lower != 'yes'
+
+    - name: Check if VPN connection exists
+      azure.azcollection.azure_rm_virtualnetworkgatewayconnection_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.connection_name }}"
+      register: vpn_connection_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete VPN connection
+      azure.azcollection.azure_rm_virtualnetworkgatewayconnection:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.connection_name }}"
+        state: absent
+      when: vpn_connection_info.virtualnetworkgatewayconnections is defined and vpn_connection_info.virtualnetworkgatewayconnections | length > 0
+
+    - name: Check if local network gateway exists
+      azure.azcollection.azure_rm_localnetworkgateway_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.local_network_gateway_name }}"
+      register: vpn_lng_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete local network gateway
+      azure.azcollection.azure_rm_localnetworkgateway:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.local_network_gateway_name }}"
+        state: absent
+      when: vpn_lng_info.localnetworkgateways is defined and vpn_lng_info.localnetworkgateways | length > 0
+
+    - name: Check if VPN gateway exists
+      azure.azcollection.azure_rm_virtualnetworkgateway_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.gateway_name }}"
+      register: vpn_gateway_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete VPN gateway
+      azure.azcollection.azure_rm_virtualnetworkgateway:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.gateway_name }}"
+        state: absent
+      when: vpn_gateway_info.virtualnetworkgateways is defined and vpn_gateway_info.virtualnetworkgateways | length > 0
+
+    - name: Check if VPN public IP exists
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.public_ip_name }}"
+      register: vpn_pip_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete VPN public IP
+      azure.azcollection.azure_rm_publicipaddress:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.public_ip_name }}"
+        state: absent
+      when: vpn_pip_info.publicipaddresses is defined and vpn_pip_info.publicipaddresses | length > 0
+
+    - name: Check if VM exists
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.vm_name }}"
+      register: vm_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Display VM status
+      debug:
+        msg: "VM '{{ ise.vm_name }}' {{ 'exists and will be deleted (this may take 2-5 minutes)' if vm_info.vms is defined and vm_info.vms | length > 0 else 'does not exist (skipping deletion)' }}"
+
+    - name: Delete virtual machine
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.vm_name }}"
+        state: absent
+      when: vm_info.vms is defined and vm_info.vms | length > 0
+      register: vm_delete_result
+
+    - name: Display VM deletion result
+      debug:
+        msg: "VM deletion: {{ 'completed' if vm_delete_result.changed else 'skipped (VM not found)' }}"
+      when: vm_delete_result is defined
+
+    - name: Check if network interface exists
+      azure.azcollection.azure_rm_networkinterface_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.nic_name }}"
+      register: nic_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete network interface
+      azure.azcollection.azure_rm_networkinterface:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.nic_name }}"
+        state: absent
+      when: nic_info.networkinterfaces is defined and nic_info.networkinterfaces | length > 0
+
+    - name: Wait for network interface deletion to complete
+      ansible.builtin.pause:
+        seconds: 10
+      when: nic_info.networkinterfaces is defined and nic_info.networkinterfaces | length > 0
+
+    - name: Check if public IP exists
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.public_ip_name }}"
+      register: pip_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete public IP address
+      azure.azcollection.azure_rm_publicipaddress:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.public_ip_name }}"
+        state: absent
+      when: pip_info.publicipaddresses is defined and pip_info.publicipaddresses | length > 0
+      register: pip_delete_result
+      retries: 3
+      delay: 15
+      until: pip_delete_result is succeeded
+
+    - name: Check if virtual network exists
+      azure.azcollection.azure_rm_virtualnetwork_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.vnet_name }}"
+      register: vnet_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Display virtual network status
+      debug:
+        msg: "Virtual Network '{{ network.vnet_name }}' {{ 'exists and will be deleted (this may take 1-3 minutes)' if vnet_info.virtualnetworks is defined and vnet_info.virtualnetworks | length > 0 else 'does not exist (skipping deletion)' }}"
+
+    - name: Check if subnets exist
+      azure.azcollection.azure_rm_subnet_info:
+        resource_group: "{{ azure.resource_group }}"
+        virtual_network: "{{ network.vnet_name }}"
+      register: subnet_info
+      failed_when: false
+      changed_when: false
+      when: vnet_info.virtualnetworks is defined and vnet_info.virtualnetworks | length > 0
+      tags: check
+
+    - name: Delete subnets
+      azure.azcollection.azure_rm_subnet:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.private_subnet_name }}"
+        virtual_network: "{{ network.vnet_name }}"
+        state: absent
+      when: vnet_info.virtualnetworks is defined and vnet_info.virtualnetworks | length > 0
+
+    - name: Delete gateway subnet
+      azure.azcollection.azure_rm_subnet:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.gateway_subnet_name }}"
+        virtual_network: "{{ network.vnet_name }}"
+        state: absent
+      when: vnet_info.virtualnetworks is defined and vnet_info.virtualnetworks | length > 0
+      register: gateway_subnet_delete_result
+      retries: 3
+      delay: 15
+      until: gateway_subnet_delete_result is succeeded
+
+    - name: Wait for subnet deletions to complete
+      ansible.builtin.pause:
+        seconds: 15
+      when: vnet_info.virtualnetworks is defined and vnet_info.virtualnetworks | length > 0
+
+    - name: Check if network security group exists
+      azure.azcollection.azure_rm_securitygroup_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.nsg_name }}"
+      register: nsg_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete network security group
+      azure.azcollection.azure_rm_securitygroup:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.nsg_name }}"
+        state: absent
+      when: nsg_info.securitygroups is defined and nsg_info.securitygroups | length > 0
+      register: nsg_delete_result
+      retries: 3
+      delay: 15
+      until: nsg_delete_result is succeeded
+
+    - name: Delete virtual network
+      azure.azcollection.azure_rm_virtualnetwork:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.vnet_name }}"
+        state: absent
+      when: vnet_info.virtualnetworks is defined and vnet_info.virtualnetworks | length > 0
+      register: vnet_delete_result
+
+    - name: Wait for virtual network deletion to complete
+      ansible.builtin.pause:
+        seconds: 20
+      when: vnet_delete_result is defined and vnet_delete_result.changed
+
+    - name: Check if storage account exists
+      azure.azcollection.azure_rm_storageaccount_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ storage.account_name }}"
+      register: storage_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Display storage account status
+      debug:
+        msg: "Storage Account '{{ storage.account_name }}' {{ 'exists and will be deleted (this may take several minutes)' if storage_info.storageaccounts is defined and storage_info.storageaccounts | length > 0 else 'does not exist (skipping deletion)' }}"
+
+    - name: Delete storage account
+      azure.azcollection.azure_rm_storageaccount:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ storage.account_name }}"
+        state: absent
+        force_delete_nonempty: true
+      when: storage_info.storageaccounts is defined and storage_info.storageaccounts | length > 0
+      register: storage_delete_result
+      retries: 3
+      delay: 20
+      until: storage_delete_result is succeeded
+
+    - name: Display storage account deletion result
+      debug:
+        msg: "Storage Account deletion: {{ 'completed' if storage_delete_result.changed else 'skipped (Storage Account not found)' }}"
+      when: storage_delete_result is defined
+
+    - name: Check if resource group exists
+      azure.azcollection.azure_rm_resourcegroup_info:
+        name: "{{ azure.resource_group }}"
+      register: rg_info
+      failed_when: false
+      changed_when: false
+      tags: check
+
+    - name: Delete resource group
+      azure.azcollection.azure_rm_resourcegroup:
+        name: "{{ azure.resource_group }}"
+        state: absent
+        force_delete_nonempty: true
+      when: rg_info.resourcegroups is defined and rg_info.resourcegroups | length > 0
+
+    - name: Delete SSH keys
+      file:
+        path: "{{ ssh.private_key_file }}"
+        state: absent
+      delegate_to: localhost
+
+    - name: Delete SSH public key
+      file:
+        path: "{{ ssh.public_key_file }}"
+        state: absent
+      delegate_to: localhost
+
+    - name: Display cleanup completion
+      ansible.builtin.debug:
+        msg:
+          - "✅ All Azure resources have been successfully deleted!"
+          - ""
+          - "Deleted resources:"
+          - "  - Resource Group: {{ azure.resource_group }}"
+          - "  - Virtual Machine: {{ ise.vm_name }}"
+          - "  - Virtual Network: {{ network.vnet_name }}"
+          - "  - Network Security Group: {{ network.nsg_name }}"
+          - "  - Storage Account: {{ storage.account_name }}"
+          - "  - Public IP Addresses"
+          - "  - Network Interfaces"
+          - "{% if vpn.enabled %}  - VPN Gateway: {{ vpn.gateway_name }}{% endif %}"
+          - "{% if vpn.enabled %}  - Local Network Gateway: {{ vpn.local_network_gateway_name }}{% endif %}"
+          - "{% if vpn.enabled %}  - VPN Connection: {{ vpn.connection_name }}{% endif %}"
+          - "  - SSH Keys"
+          - ""
+          - "🎯 Cleanup completed successfully."

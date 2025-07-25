@@ -1,0 +1,168 @@
+---
+- name: Create Azure Infrastructure for Cisco ISE
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    - name: Ensure SSH keys directory exists
+      ansible.builtin.file:
+        path: "{{ ssh.key_path }}"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+
+    - name: Check if SSH keys exist
+      ansible.builtin.stat:
+        path: "{{ ssh.private_key_file }}"
+      register: ssh_private_key_stat
+      delegate_to: localhost
+
+    - name: Generate SSH keys if they don't exist
+      when: not ssh_private_key_stat.stat.exists
+      block:
+        - name: Generate OpenSSH key pair
+          community.crypto.openssh_keypair:
+            state: present
+            type: rsa
+            size: 4096
+            path: "{{ ssh.private_key_file }}"
+            comment: "{{ ssh.key_name }}"
+            mode: '0600'
+          delegate_to: localhost
+
+        - name: Set public key file permissions
+          ansible.builtin.file:
+            path: "{{ ssh.public_key_file }}"
+            mode: '0644'
+          delegate_to: localhost
+
+    - name: Verify SSH public key exists (should exist after generation or already exist)
+      ansible.builtin.stat:
+        path: "{{ ssh.public_key_file }}"
+      register: ssh_public_key_stat
+      delegate_to: localhost
+
+    - name: Fail if SSH public key doesn't exist
+      ansible.builtin.fail:
+        msg: "SSH public key file {{ ssh.public_key_file }} does not exist after key generation"
+      when: not ssh_public_key_stat.stat.exists
+
+    - name: Read SSH public key content
+      ansible.builtin.slurp:
+        src: "{{ ssh.public_key_file }}"
+      register: ssh_public_key
+      delegate_to: localhost
+
+    - name: Set SSH public key content
+      ansible.builtin.set_fact:
+        ssh_public_key_content: "{{ ssh_public_key.content | b64decode | trim }}"
+
+    - name: Create resource group
+      azure.azcollection.azure_rm_resourcegroup:
+        name: "{{ azure.resource_group }}"
+        location: "{{ azure.region }}"
+        tags: "{{ resource_tags }}"
+
+    - name: Create virtual network
+      azure.azcollection.azure_rm_virtualnetwork:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.vnet_name }}"
+        address_prefixes: "{{ network.vnet_cidr }}"
+        tags: "{{ resource_tags }}"
+      register: vnet_create_result
+      retries: 3
+      delay: 20
+      until: vnet_create_result is succeeded
+
+    - name: Wait for virtual network to be fully provisioned
+      azure.azcollection.azure_rm_virtualnetwork_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.vnet_name }}"
+      register: vnet_info
+      until: vnet_info.virtualnetworks is defined and vnet_info.virtualnetworks | length > 0
+      retries: 10
+      delay: 15
+
+    - name: Create network security group
+      azure.azcollection.azure_rm_securitygroup:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.nsg_name }}"
+        purge_rules: true
+        rules: "{{ security_rules }}"
+        tags: "{{ resource_tags }}"
+
+    - name: Wait for network security group to be fully provisioned
+      azure.azcollection.azure_rm_securitygroup_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.nsg_name }}"
+      register: nsg_info
+      until: nsg_info.securitygroups is defined and nsg_info.securitygroups | length > 0
+      retries: 8
+      delay: 10
+
+    - name: Create private subnet
+      azure.azcollection.azure_rm_subnet:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.private_subnet_name }}"
+        address_prefix: "{{ network.private_subnet_cidr }}"
+        virtual_network: "{{ network.vnet_name }}"
+        security_group: "{{ network.nsg_name }}"
+
+    - name: Create gateway subnet
+      azure.azcollection.azure_rm_subnet:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ network.gateway_subnet_name }}"
+        address_prefix: "{{ network.gateway_subnet_cidr }}"
+        virtual_network: "{{ network.vnet_name }}"
+
+    - name: Create storage account
+      azure.azcollection.azure_rm_storageaccount:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ storage.account_name }}"
+        account_type: "{{ storage.account_type }}"
+        kind: "{{ storage.kind }}"
+        tags: "{{ resource_tags }}"
+      register: storage_create_result
+      retries: 4
+      delay: 20
+      until: storage_create_result is succeeded
+
+    - name: Create public IP address for ISE
+      azure.azcollection.azure_rm_publicipaddress:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.public_ip_name }}"
+        allocation_method: Static
+        sku: Standard
+        tags: "{{ resource_tags }}"
+
+    - name: Create network interface
+      azure.azcollection.azure_rm_networkinterface:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.nic_name }}"
+        virtual_network: "{{ network.vnet_name }}"
+        subnet: "{{ network.private_subnet_name }}"
+        security_group: "{{ network.nsg_name }}"
+        ip_configurations:
+          - name: ipconfig1
+            primary: true
+            public_ip_address_name: "{{ ise.public_ip_name }}"
+            private_ip_allocation_method: Static
+            private_ip_address: "{{ ise.private_ip }}"
+        tags: "{{ resource_tags }}"
+
+    - name: Display infrastructure deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ Azure Infrastructure created successfully!"
+          - ""
+          - "Resource Group: {{ azure.resource_group }}"
+          - "Virtual Network: {{ network.vnet_name }} ({{ network.vnet_cidr }})"
+          - "Private Subnet: {{ network.private_subnet_name }} ({{ network.private_subnet_cidr }})"
+          - "Storage Account: {{ storage.account_name }}"
+          - "Public IP: {{ ise.public_ip_name }}"
+          - "Network Interface: {{ ise.nic_name }}"
+          - ""
+          - "Next: Run playbook 02-deploy-ise.yml"

@@ -1,0 +1,94 @@
+---
+- name: Create VPN Gateway for Azure ISE Deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    - name: Check if VPN is enabled
+      fail:
+        msg: "VPN is not enabled in vars/main.yml. Set vpn.enabled: true to create VPN gateway."
+      when: not vpn.enabled
+
+    - name: Create public IP for VPN gateway
+      azure.azcollection.azure_rm_publicipaddress:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.public_ip_name }}"
+        allocation_method: Static
+        sku: Standard
+        tags: "{{ resource_tags }}"
+
+    - name: Create virtual network gateway
+      azure.azcollection.azure_rm_virtualnetworkgateway:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.gateway_name }}"
+        ip_configurations:
+          - name: vpnipconfig
+            private_ip_allocation_method: Dynamic
+            public_ip_address_name: "{{ vpn.public_ip_name }}"
+            subnet: "{{ network.gateway_subnet_name }}"
+        virtual_network: "{{ network.vnet_name }}"
+        gateway_type: Vpn
+        vpn_type: RouteBased
+        sku: VpnGw1
+        enable_bgp: false
+        tags: "{{ resource_tags }}"
+
+    - name: Wait for VPN gateway to be ready
+      azure.azcollection.azure_rm_virtualnetworkgateway_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.gateway_name }}"
+      register: vpn_gateway_info
+      until: vpn_gateway_info.virtualnetworkgateways[0].provisioning_state == 'Succeeded'
+      retries: 30
+      delay: 60
+
+    - name: Create local network gateway
+      azure.azcollection.azure_rm_localnetworkgateway:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.local_network_gateway_name }}"
+        gateway_address: "{{ lookup('env', 'LOCAL_GATEWAY_IP', default='10.0.0.1') }}"
+        address_prefixes: "{{ vpn.local_address_space }}"
+        tags: "{{ resource_tags }}"
+
+    - name: Create VPN connection
+      azure.azcollection.azure_rm_virtualnetworkgatewayconnection:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.connection_name }}"
+        virtual_network_gateway: "{{ vpn.gateway_name }}"
+        local_network_gateway: "{{ vpn.local_network_gateway_name }}"
+        connection_type: IPsec
+        shared_key: "{{ vpn.shared_key }}"
+        enable_bgp: false
+        tags: "{{ resource_tags }}"
+
+    - name: Get VPN gateway public IP
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ vpn.public_ip_name }}"
+      register: vpn_public_ip_info
+
+    - name: Display VPN deployment information
+      ansible.builtin.debug:
+        msg:
+          - "✅ VPN Gateway created successfully!"
+          - ""
+          - "VPN Gateway: {{ vpn.gateway_name }}"
+          - "VPN Gateway Public IP: {{ vpn_public_ip_info.publicipaddresses[0].ip_address }}"
+          - "Local Network Gateway: {{ vpn.local_network_gateway_name }}"
+          - "VPN Connection: {{ vpn.connection_name }}"
+          - "Local Address Space: {{ vpn.local_address_space }}"
+          - ""
+          - "Configuration for your on-premises device:"
+          - "  Remote Gateway IP: {{ vpn_public_ip_info.publicipaddresses[0].ip_address }}"
+          - "  Local Network: {{ vpn.local_address_space }}"
+          - "  Shared Key: {{ vpn.shared_key }}"
+          - "  IKE Version: 2"
+          - "  Encryption: AES256"
+          - "  Authentication: SHA256"
+          - "  DH Group: 14"
+          - ""
+          - "Note: Configure your on-premises VPN device with the above settings"
+          - "      to establish the site-to-site VPN connection."

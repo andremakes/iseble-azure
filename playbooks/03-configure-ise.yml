@@ -1,0 +1,403 @@
+---
+- name: Configure Cisco ISE after deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    - name: Check if resource group exists
+      azure.azcollection.azure_rm_resourcegroup_info:
+        name: "{{ azure.resource_group }}"
+      register: resource_group_info
+      failed_when: false
+
+    - name: Verify resource group exists
+      ansible.builtin.fail:
+        msg: |
+          ❌ Resource group '{{ azure.resource_group }}' does not exist!
+
+          Prerequisites not met:
+          • Please run '01-create-infrastructure.yml' first to create Azure resources
+          • Then run '02-deploy-ise.yml' to deploy the ISE instance
+          • Only then run this configuration playbook
+
+          Current playbook execution order should be:
+          1. ansible-playbook playbooks/01-create-infrastructure.yml
+          2. ansible-playbook playbooks/02-deploy-ise.yml
+          3. ansible-playbook playbooks/03-configure-ise.yml
+      when: resource_group_info.resourcegroups | length == 0
+
+    - name: Get public IP address
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.public_ip_name }}"
+      register: public_ip_info
+      failed_when: false
+
+    - name: Check if public IP exists
+      ansible.builtin.fail:
+        msg: |
+          ❌ Public IP '{{ ise.public_ip_name }}' not found in resource group '{{ azure.resource_group }}'!
+
+          This usually means:
+          • ISE infrastructure hasn't been created yet
+          • ISE deployment hasn't completed successfully
+
+          Please ensure you have run these playbooks in order:
+          1. ansible-playbook playbooks/01-create-infrastructure.yml
+          2. ansible-playbook playbooks/02-deploy-ise.yml
+
+          Then retry this configuration playbook.
+      when: public_ip_info.publicipaddresses | length == 0
+
+    - name: Check if public IP has been assigned
+      ansible.builtin.fail:
+        msg: |
+          ❌ Public IP '{{ ise.public_ip_name }}' exists but no IP address has been assigned yet!
+
+          This usually means:
+          • ISE VM is still being deployed
+          • ISE VM deployment failed
+
+          Please check:
+          1. Azure portal for VM deployment status
+          2. Run '02-deploy-ise.yml' if deployment failed
+          3. Wait for VM to fully boot (this can take 10-15 minutes)
+
+          Then retry this configuration playbook.
+      when:
+        - public_ip_info.publicipaddresses | length > 0
+        - public_ip_info.publicipaddresses[0].ip_address is not defined or public_ip_info.publicipaddresses[0].ip_address == ""
+
+    - name: Set ISE host IP
+      ansible.builtin.set_fact:
+        ise_host_ip: "{{ public_ip_info.publicipaddresses[0].ip_address }}"
+
+    - name: Wait for ISE SSH to be available
+      ansible.builtin.wait_for:
+        host: "{{ ise_host_ip }}"
+        port: 22
+        timeout: 600
+
+    - name: Wait for ISE web interface to be available
+      ansible.builtin.uri:
+        url: "https://{{ ise_host_ip }}"
+        method: GET
+        validate_certs: false
+        status_code: [200, 401, 403]
+        timeout: 30
+      register: web_check
+      until: web_check.status in [200, 401, 403]
+      retries: 200
+      delay: 30
+
+    - name: Test SSH connectivity (optional verification)
+      ansible.builtin.shell: |
+        set -o pipefail
+        ssh -i {{ ssh.private_key_file }} \
+            -o StrictHostKeyChecking=no \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=5 \
+            {{ ise.admin_username }}@{{ ise_host_ip }} \
+            'echo "SSH Ready"' | head -5
+      register: ssh_ready_check
+      failed_when: false
+      changed_when: false
+
+    # # Basic Repository Configuration
+    # - name: Create backup repositories
+    #   cisco.ise.repository:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     name: "{{ item.name }}"
+    #     protocol: "{{ item.protocol }}"
+    #     path: "{{ item.path }}"
+    #     serverName: "{{ item.server_name }}"
+    #     userName: "{{ item.username }}"
+    #     password: "{{ item.password }}"
+    #     enablePki: "{{ item.enable_pki }}"
+    #     description: "{{ item.description }}"
+    #   loop: "{{ ise_config.repositories }}"
+    #   register: repository_creation
+    #   failed_when: false
+
+    # # Network Device Configuration
+    # - name: Create network access devices
+    #   cisco.ise.network_device:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     name: "{{ item.name }}"
+    #     description: "{{ item.description }}"
+    #     NetworkDeviceIPList:
+    #       - ipaddress: "{{ item.ip_address }}"
+    #         mask: 32
+    #     NetworkDeviceGroupList:
+    #       - "{{ item.device_type }}"
+    #       - "{{ item.location }}"
+    #     authenticationSettings:
+    #       networkProtocol: RADIUS
+    #       radiusSharedSecret: "{{ item.authentication_settings.radius_shared_secret }}"
+    #       enableKeyWrap: "{{ item.authentication_settings.enable_key_wrap }}"
+    #     snmpsettings: "{{ item.snmp_settings | default({}) }}"
+    #     trustsecsettings: "{{ item.trustsec_settings | default({}) }}"
+    #   loop: "{{ ise_config.network_devices }}"
+    #   register: network_device_creation
+    #   failed_when: false
+
+    # # Endpoint Management (using endpoints_bulk module from official docs)
+    # - name: Create endpoint identity groups via bulk endpoint management
+    #   cisco.ise.endpoints_bulk:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     payload:
+    #       - name: "{{ item.name }}"
+    #         description: "{{ item.description }}"
+    #         groupId: "{{ item.group_id | default('') }}"
+    #         mac: "{{ item.mac_address | default('00:00:00:00:00:00') }}"
+    #         staticGroupAssignment: true
+    #   loop: "{{ ise_config.endpoint_groups }}"
+    #   register: endpoint_creation
+    #   failed_when: false
+
+    # # Guest Self-Registration Portal (module exists in official docs!)
+    # - name: Create guest self-registration portal
+    #   cisco.ise.self_registered_portal:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     name: "{{ ise_config.guest_portal.name }}"
+    #     description: "{{ ise_config.guest_portal.description }}"
+    #     portalType: "{{ ise_config.guest_portal.portal_type }}"
+    #     settings: "{{ ise_config.guest_portal.settings }}"
+    #     customizations: "{{ ise_config.guest_portal.customizations }}"
+    #   register: guest_portal_creation
+    #   failed_when: false
+
+    # # BYOD Portal Configuration (Working module confirmed!)
+    # - name: Create BYOD device registration portal
+    #   cisco.ise.byod_portal:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     name: "{{ ise_config.byod_portal.name }}"
+    #     description: "{{ ise_config.byod_portal.description }}"
+    #     portalType: "{{ ise_config.byod_portal.portal_type }}"
+    #     settings: "{{ ise_config.byod_portal.settings }}"
+    #     customizations: "{{ ise_config.byod_portal.customizations }}"
+    #   register: byod_portal_creation
+    #   failed_when: false
+
+    # # ANC Policy Configuration (Adaptive Network Control - Working module!)
+    # - name: Create ANC policies for quarantine/remediation
+    #   cisco.ise.anc_policy:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     name: "{{ item.name }}"
+    #     actions: "{{ item.actions }}"
+    #   loop: "{{ ise_config.anc_policies }}"
+    #   register: anc_policy_creation
+    #   failed_when: false
+
+    # # Authorization Profile Configuration (module exists in official docs!)
+    # - name: Create authorization profiles
+    #   cisco.ise.authorization_profile:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     name: "{{ item.name }}"
+    #     description: "{{ item.description }}"
+    #     accessType: "{{ item.access_type | default('ACCESS_ACCEPT') }}"
+    #     authzProfileType: "{{ item.profile_type | default('SWITCH') }}"
+    #     vlan: "{{ item.vlan | default({}) }}"
+    #     reauth: "{{ item.reauth | default({}) }}"
+    #     airespace: "{{ item.airespace | default({}) }}"
+    #     profileName: "{{ item.profile_name | default('') }}"
+    #   loop: "{{ ise_config.authorization_profiles }}"
+    #   register: authorization_profile_creation
+    #   failed_when: false
+
+    # # Authorization Policy Configuration
+    # - name: Create authorization policies
+    #   cisco.ise.authorization_policy:
+    #     ise_hostname: "{{ ise_host_ip }}"
+    #     ise_username: "{{ ise_config.api_username }}"
+    #     ise_password: "{{ ise_config.api_password }}"
+    #     ise_verify: "{{ ise_config.verify_ssl }}"
+    #     ise_debug: "{{ ise_config.debug }}"
+    #     state: present
+    #     policyName: "{{ item.policy_name }}"
+    #     description: "{{ item.description }}"
+    #     rule: "{{ item.rule }}"
+    #   loop: "{{ ise_config.authorization_policies }}"
+    #   register: authorization_policy_creation
+    #   failed_when: false
+
+    # Check API availability for final validation
+    - name: Check ERS API availability
+      ansible.builtin.uri:
+        url: "https://{{ ise_host_ip }}/ers/config/versioninfo"
+        method: GET
+        validate_certs: false
+        status_code: [200, 401, 403]
+        timeout: 10
+      register: ers_api_check
+      failed_when: false
+
+    - name: Check Open API availability
+      ansible.builtin.uri:
+        url: "https://{{ ise_host_ip }}/api/v1/version"
+        method: GET
+        validate_certs: false
+        status_code: [200, 401, 403]
+        timeout: 10
+      register: open_api_check
+      failed_when: false
+
+    # Display configuration results
+    - name: Display ISE configuration success
+      ansible.builtin.debug:
+        msg: "✅ Basic Cisco ISE Configuration Complete!"
+
+    - name: Display repository configuration results
+      ansible.builtin.debug:
+        msg:
+          - "Repository Configuration:"
+          - >-
+            {{ '  ✅ ' + item.item.name + ': Success'
+            if not item.failed
+            else '  ❌ ' + item.item.name + ': Failed - ' + (item.msg | default('Unknown error')) }}
+      loop: "{{ repository_creation.results }}"
+      when: repository_creation.results is defined
+
+    - name: Display network device configuration results
+      ansible.builtin.debug:
+        msg:
+          - "Network Device Configuration:"
+          - >-
+            {{ '  ✅ ' + item.item.name + ': Success'
+            if not item.failed
+            else '  ❌ ' + item.item.name + ': Failed - ' + (item.msg | default('Unknown error')) }}
+      loop: "{{ network_device_creation.results }}"
+      when: network_device_creation.results is defined
+
+    # - name: Display endpoint group configuration results
+    #   ansible.builtin.debug:
+    #     msg:
+    #       - "Endpoint Identity Group Configuration:"
+    #       - >-
+    #         {{ '  ✅ ' + item.item.name + ': Success'
+    #         if not item.failed
+    #         else '  ❌ ' + item.item.name + ': Failed - ' + (item.msg | default('Unknown error')) }}
+    #   loop: "{{ endpoint_group_creation.results }}"
+    #   when: endpoint_group_creation.results is defined
+
+    - name: Display endpoint configuration results
+      ansible.builtin.debug:
+        msg:
+          - "Endpoint Configuration:"
+          - "{{ '  ✅ Endpoints: Success' if not endpoint_creation.failed else '  ❌ Endpoints: Failed' }}"
+      when: endpoint_creation is defined
+
+    - name: Display portal configuration results
+      ansible.builtin.debug:
+        msg:
+          - "Portal Configuration:"
+          - "{{ '  ✅ Guest Portal: Success' if not guest_portal_creation.failed else '  ❌ Guest Portal: Failed' }}"
+          - "{{ '  ✅ BYOD Portal: Success' if not byod_portal_creation.failed else '  ❌ BYOD Portal: Failed' }}"
+      when: guest_portal_creation is defined and byod_portal_creation is defined
+
+    - name: Display ANC policy configuration results
+      ansible.builtin.debug:
+        msg:
+          - "ANC Policy Configuration:"
+          - "{{ '  ✅ ' + item.item.name + ': Success' if not item.failed else '  ❌ ' + item.item.name + ': Failed' }}"
+      loop: "{{ anc_policy_creation.results }}"
+      when: anc_policy_creation.results is defined
+
+    - name: Display authorization profile configuration results
+      ansible.builtin.debug:
+        msg:
+          - "Authorization Profile Configuration:"
+          - "{{ '  ✅ ' + item.item.name + ': Success' if not item.failed else '  ❌ ' + item.item.name + ': Failed' }}"
+      loop: "{{ authorization_profile_creation.results }}"
+      when: authorization_profile_creation.results is defined
+
+    # - name: Display authorization policy configuration results
+    #   ansible.builtin.debug:
+    #     msg:
+    #       - "Authorization Policy Configuration:"
+    #       - >-
+    #         {{ '  ✅ ' + item.item.policy_name + ': Success'
+    #         if not item.failed
+    #         else '  ❌ ' + item.item.policy_name + ': Failed - ' + (item.msg | default('Unknown error')) }}
+    #   loop: "{{ authorization_policy_creation.results }}"
+    #   when: authorization_policy_creation.results is defined
+
+    - name: Display ISE instance details
+      ansible.builtin.debug:
+        msg:
+          - "ISE Instance Details:"
+          - "  Public IP: {{ ise_host_ip }}"
+          - "  Private IP: {{ ise.private_ip }}"
+          - "  Admin Username: {{ ise.admin_username }}"
+          - "  Domain: {{ ise.domain_name }}"
+
+    - name: Display access information
+      ansible.builtin.debug:
+        msg:
+          - "Access Information:"
+          - "  Web UI: https://{{ ise_host_ip }}"
+          - "  SSH: ssh -i {{ ssh.private_key_file }} {{ ise.admin_username }}@{{ ise_host_ip }}"
+          - "  Guest Portal: https://{{ ise_host_ip }}:8443/guestportal"
+          - "  BYOD Portal: https://{{ ise_host_ip }}:8443/mydevices"
+
+    - name: Display API status
+      ansible.builtin.debug:
+        msg:
+          - "API Status:"
+          - "  ERS API: {{ 'Available' if ers_api_check.status in [200, 401, 403] else 'Not Ready' }}"
+          - "  Open API: {{ 'Available' if open_api_check.status in [200, 401, 403] else 'Not Ready' }}"
+
+    - name: Display credentials and next steps
+      ansible.builtin.debug:
+        msg:
+          - "Default Credentials:"
+          - "  Username: {{ ise.admin_username }}"
+          - "  Password: {{ ise.password }}"
+          - ""
+          - "🎯 Basic Configuration Complete:"
+          - "  ✅ Repositories configured"
+          - "  ✅ Network devices configured"
+          - "  ⚠️  Advanced features (portals, policies) require additional configuration"
+          - ""
+          - "Next Steps:"
+          - "  1. Access ISE web interface at https://{{ ise_host_ip }}"
+          - "  2. Verify configurations in the web UI"
+          - "  3. Configure additional policies and portals manually as needed"

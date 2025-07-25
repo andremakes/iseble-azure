@@ -1,0 +1,205 @@
+---
+- name: Deploy Cisco ISE Virtual Machine on Azure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    - name: Ensure SSH keys directory exists
+      ansible.builtin.file:
+        path: "{{ ssh.key_path }}"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+
+    - name: Check if SSH keys exist
+      ansible.builtin.stat:
+        path: "{{ ssh.private_key_file }}"
+      register: ssh_private_key_stat
+      delegate_to: localhost
+
+    - name: Generate SSH keys if they don't exist
+      when: not ssh_private_key_stat.stat.exists
+      block:
+        - name: Generate OpenSSH key pair
+          community.crypto.openssh_keypair:
+            state: present
+            type: rsa
+            size: 4096
+            path: "{{ ssh.private_key_file }}"
+            comment: "{{ ssh.key_name }}"
+            mode: '0600'
+          delegate_to: localhost
+
+        - name: Set public key file permissions
+          ansible.builtin.file:
+            path: "{{ ssh.public_key_file }}"
+            mode: '0644'
+          delegate_to: localhost
+
+        - name: Set public key file permissions
+          ansible.builtin.file:
+            path: "{{ ssh.public_key_file }}"
+            mode: '0644'
+          delegate_to: localhost
+
+    - name: Verify SSH public key exists (should exist after generation or already exist)
+      ansible.builtin.stat:
+        path: "{{ ssh.public_key_file }}"
+      register: ssh_public_key_stat
+      delegate_to: localhost
+
+    - name: Fail if SSH public key doesn't exist
+      ansible.builtin.fail:
+        msg: "SSH public key file {{ ssh.public_key_file }} does not exist after key generation"
+      when: not ssh_public_key_stat.stat.exists
+
+    - name: Read SSH public key content
+      ansible.builtin.slurp:
+        src: "{{ ssh.public_key_file }}"
+      register: ssh_public_key
+      delegate_to: localhost
+
+    - name: Set SSH public key content
+      ansible.builtin.set_fact:
+        ssh_public_key_content: "{{ ssh_public_key.content | b64decode | trim }}"
+    - name: Check if network interface exists
+      azure.azcollection.azure_rm_networkinterface_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.nic_name }}"
+      register: nic_info
+      failed_when: false
+
+    - name: Check if public IP exists
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.public_ip_name }}"
+      register: public_ip_check
+      failed_when: false
+
+    - name: Set infrastructure status variables
+      ansible.builtin.set_fact:
+        public_ip_status: "{{ 'EXISTS' if public_ip_check.publicipaddresses is defined and public_ip_check.publicipaddresses | length > 0 else 'MISSING' }}"
+        nic_status: "{{ 'EXISTS' if nic_info.networkinterfaces is defined and nic_info.networkinterfaces | length > 0 else 'MISSING' }}"
+
+    - name: Display infrastructure status
+      ansible.builtin.debug:
+        msg:
+          - "Infrastructure Status Check:"
+          - "  Public IP '{{ ise.public_ip_name }}': {{ public_ip_status }}"
+          - "  Network Interface '{{ ise.nic_name }}': {{ nic_status }}"
+
+    - name: Recreate public IP if missing
+      azure.azcollection.azure_rm_publicipaddress:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.public_ip_name }}"
+        allocation_method: Static
+        sku: Standard
+        tags: "{{ resource_tags }}"
+      when: public_ip_status == 'MISSING'
+      register: public_ip_creation
+
+    - name: Display public IP recreation result
+      ansible.builtin.debug:
+        msg: "✅ Public IP '{{ ise.public_ip_name }}' recreated successfully"
+      when: public_ip_creation is defined and public_ip_creation.changed
+
+    - name: Recreate network interface if missing
+      azure.azcollection.azure_rm_networkinterface:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.nic_name }}"
+        virtual_network: "{{ network.vnet_name }}"
+        subnet: "{{ network.private_subnet_name }}"
+        security_group: "{{ network.nsg_name }}"
+        ip_configurations:
+          - name: ipconfig1
+            primary: true
+            public_ip_address_name: "{{ ise.public_ip_name }}"
+            private_ip_allocation_method: Static
+            private_ip_address: "{{ ise.private_ip }}"
+        tags: "{{ resource_tags }}"
+      when: nic_status == 'MISSING'
+      register: nic_creation
+
+    - name: Display network interface recreation result
+      ansible.builtin.debug:
+        msg: "✅ Network Interface '{{ ise.nic_name }}' recreated successfully"
+      when: nic_creation is defined and nic_creation.changed
+
+    - name: Deploy Cisco ISE Virtual Machine
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.vm_name }}"
+        vm_size: "{{ ise.vm_size }}"
+        admin_username: "{{ ise.admin_username }}"
+        ssh_password_enabled: false
+        ssh_public_keys:
+          - path: "/home/{{ ise.admin_username }}/.ssh/authorized_keys"
+            key_data: "{{ ssh_public_key_content }}"
+        image:
+          offer: "{{ ise.image.offer }}"
+          publisher: "{{ ise.image.publisher }}"
+          sku: "{{ ise.image.sku }}"
+          version: "{{ ise.image.version }}"
+        os_disk_size_gb: "{{ ise.os_disk_size_gb }}"
+        managed_disk_type: "{{ ise.os_disk_type }}"
+        network_interfaces: "{{ ise.nic_name }}"
+        user_data: "{{ ise.user_data }}"
+        plan:
+          name: "{{ ise.image.sku }}"
+          product: "{{ ise.image.offer }}"
+          publisher: "{{ ise.image.publisher }}"
+        boot_diagnostics:
+          enabled: true
+          storage_account: "{{ storage.account_name }}"
+        tags: "{{ resource_tags }}"
+      register: vm_deploy_result
+      retries: 3
+      delay: 20
+      until: vm_deploy_result is succeeded
+
+    - name: Wait for VM deployment to complete
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.vm_name }}"
+      register: vm_info
+      until: vm_info.vms is defined and vm_info.vms | length > 0
+      retries: 30
+      delay: 30
+
+    - name: Get public IP address
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.public_ip_name }}"
+      register: public_ip_info
+
+    - name: Display deployment success
+      ansible.builtin.debug:
+        msg: "✅ Cisco ISE Virtual Machine deployed successfully!"
+
+    - name: Display connection information
+      ansible.builtin.debug:
+        msg:
+          - "Connection Details:"
+          - "  Public IP: {{ public_ip_info.publicipaddresses[0].ip_address }}"
+          - "  SSH: ssh -i {{ ssh.private_key_file }} {{ ise.admin_username }}@{{ public_ip_info.publicipaddresses[0].ip_address }}"
+          - "  Web UI: https://{{ public_ip_info.publicipaddresses[0].ip_address }}"
+
+    - name: Display ISE services configuration
+      ansible.builtin.debug:
+        msg:
+          - "ISE Services:"
+          - "  ERS API: {{ 'Enabled' if ise.ers_api else 'Disabled' }}"
+          - "  Open API: {{ 'Enabled' if ise.open_api else 'Disabled' }}"
+          - "  PXGrid: {{ 'Enabled' if ise.pxgrid else 'Disabled' }}"
+          - "  PXGrid Cloud: {{ 'Enabled' if ise.pxgrid_cloud else 'Disabled' }}"
+
+    - name: Display next steps
+      ansible.builtin.debug:
+        msg:
+          - "Next Steps:"
+          - "  🔧 Run playbook 03-configure-ise.yml (has built-in waiting for ISE readiness)"
+          - "  🌐 Access web interface for manual configuration"
+          - "  ⏰ Note: ISE will take 10-15 minutes to fully initialize"

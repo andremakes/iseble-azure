@@ -1,0 +1,149 @@
+---
+- name: Destroy ISE Virtual Machines Only
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  tasks:
+    - name: Confirm ISE VM deletion
+      ansible.builtin.pause:
+        prompt: |
+          WARNING: This will delete ISE Virtual Machines only
+
+          This will delete:
+          - Virtual Machine: {{ ise.vm_name }}
+
+          Infrastructure will be preserved:
+          - Resource Group: {{ azure.resource_group }}
+          - Virtual Network: {{ network.vnet_name }}
+          - Network Security Group: {{ network.nsg_name }}
+          - Storage Account: {{ storage.account_name }}
+          - Subnets
+          - Public IP Address: {{ ise.public_ip_name }}
+
+          Note: Network Interface will be automatically deleted by Azure
+          {% if vpn.enabled %}
+          - VPN Gateway: {{ vpn.gateway_name }}
+          - Local Network Gateway: {{ vpn.local_network_gateway_name }}
+          - VPN Connection: {{ vpn.connection_name }}
+          {% endif %}
+
+          Type 'yes' to confirm ISE VM deletion:
+      register: vm_deletion_prompt
+
+    - name: Validate confirmation response
+      ansible.builtin.fail:
+        msg: "VM deletion cancelled. You must type 'yes' to confirm deletion."
+      when: vm_deletion_prompt.user_input | lower != 'yes'
+
+    - name: Check if ISE VM exists
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.vm_name }}"
+      register: vm_info
+      failed_when: false
+      changed_when: false
+
+    - name: Display VM status
+      ansible.builtin.debug:
+        msg: "ISE VM '{{ ise.vm_name }}' {{ 'exists' if vm_info.vms is defined and vm_info.vms | length > 0 else 'does not exist' }}"
+      when: vm_info is defined
+
+    - name: Delete ISE virtual machine
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ azure.resource_group }}"
+        name: "{{ ise.vm_name }}"
+        state: absent
+      when: vm_info.vms is defined and vm_info.vms | length > 0
+      register: vm_delete_result
+
+    - name: Display VM deletion result
+      ansible.builtin.debug:
+        msg: "ISE VM deletion: {{ 'completed' if vm_delete_result.changed else 'skipped (VM not found)' }}"
+      when: vm_delete_result is defined
+
+    - name: Display infrastructure preservation note
+      ansible.builtin.debug:
+        msg:
+          - "Infrastructure components preserved for redeployment:"
+          - "  - Public IP Address: {{ ise.public_ip_name }}"
+          - "  - All networking and storage resources"
+          - ""
+          - "Note: Network interface was automatically deleted by Azure"
+
+    - name: Delete SSH keys (optional)
+      ansible.builtin.pause:
+        prompt: |
+          Do you want to delete the SSH keys as well?
+
+          SSH Keys to delete:
+          - Private Key: {{ ssh.private_key_file }}
+          - Public Key: {{ ssh.public_key_file }}
+
+          Type 'yes' to delete SSH keys, or 'no' to keep them:
+      register: ssh_key_prompt
+
+    - name: Check if SSH private key exists
+      ansible.builtin.stat:
+        path: "{{ ssh.private_key_file }}"
+      register: ssh_private_key_stat
+      delegate_to: localhost
+      when: ssh_key_prompt.user_input | lower == 'yes'
+
+    - name: Delete SSH private key
+      ansible.builtin.file:
+        path: "{{ ssh.private_key_file }}"
+        state: absent
+      delegate_to: localhost
+      when: ssh_key_prompt.user_input | lower == 'yes' and ssh_private_key_stat.stat.exists
+      register: ssh_private_delete_result
+
+    - name: Check if SSH public key exists
+      ansible.builtin.stat:
+        path: "{{ ssh.public_key_file }}"
+      register: ssh_public_key_stat
+      delegate_to: localhost
+      when: ssh_key_prompt.user_input | lower == 'yes'
+
+    - name: Delete SSH public key
+      ansible.builtin.file:
+        path: "{{ ssh.public_key_file }}"
+        state: absent
+      delegate_to: localhost
+      when: ssh_key_prompt.user_input | lower == 'yes' and ssh_public_key_stat.stat.exists
+      register: ssh_public_delete_result
+
+    - name: Display SSH key deletion results
+      ansible.builtin.debug:
+        msg:
+          - "SSH Key deletion results:"
+          - "  - Private key: {{ 'deleted' if ssh_private_delete_result.changed else 'not found' }}"
+          - "  - Public key: {{ 'deleted' if ssh_public_delete_result.changed else 'not found' }}"
+      when: ssh_key_prompt.user_input | lower == 'yes'
+
+    - name: Display ISE VM cleanup completion
+      ansible.builtin.debug:
+        msg:
+          - "✅ ISE Virtual Machine cleanup completed successfully!"
+          - ""
+          - "Deleted resources:"
+          - "  - Virtual Machine: {{ ise.vm_name }}"
+          - "{% if ssh_key_prompt.user_input | lower == 'yes' %}  - SSH Keys{% endif %}"
+          - ""
+          - "Preserved infrastructure:"
+          - "  - Resource Group: {{ azure.resource_group }}"
+          - "  - Virtual Network: {{ network.vnet_name }}"
+          - "  - Network Security Group: {{ network.nsg_name }}"
+          - "  - Storage Account: {{ storage.account_name }}"
+          - "  - Subnets"
+          - "  - Public IP Address: {{ ise.public_ip_name }}"
+          - "{% if vpn.enabled %}  - VPN Gateway: {{ vpn.gateway_name }}{% endif %}"
+          - "{% if vpn.enabled %}  - Local Network Gateway: {{ vpn.local_network_gateway_name }}{% endif %}"
+          - "{% if vpn.enabled %}  - VPN Connection: {{ vpn.connection_name }}{% endif %}"
+          - ""
+          - "Note: Network interface will be automatically recreated during redeployment."
+          - ""
+          - "You can now redeploy ISE using:"
+          - "  ansible-playbook playbooks/02-deploy-ise.yml"

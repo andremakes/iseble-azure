@@ -1,0 +1,110 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+.venv
+env.bak/
+venv.bak/
+
+# Environment and Configuration
+.env.*
+!.env.example
+config.local.yml
+secrets/
+
+# IDE - VSCode
+.vscode/
+.cursor/
+*.code-workspace
+.history
+
+# Logs
+*.log
+logs/
+ise_export.log
+
+# SSH keys
+*.pem
+*.key
+*.ppk
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+files/ssh_keys/
+playbooks/files/ssh_keys/
+
+# Azure specific
+azuredeploy.parameters.json
+*.parameters.json
+azuredeploy.json.bkp
+*.bkp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary and cache files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+tmp/
+temp/
+
+# Project specific
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite3
+config.ini
+credentials.json
+
+# Ansible
+*.retry
+ansible.log
+ansible.cfg.local
+retry_files/
+
+# Cloud
+.azure/
+.aws/
+.gcp/
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+docker/.env*
+docker/secrets/

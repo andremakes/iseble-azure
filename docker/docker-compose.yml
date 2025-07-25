@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  iseble:
+    build: .
+    profiles: [dev, prod]
+    working_dir: /ansible
+    volumes:
+      # Development: full project mount for live editing
+      - ..:/ansible:${COMPOSE_PROFILES:-dev}
+      # Production: selective mounts (read-only)
+      - ../inventory:/ansible/inventory:ro
+      - ../vars:/ansible/vars:ro
+      - ../playbooks:/ansible/playbooks:ro
+      - ../templates:/ansible/templates:ro
+      - ../files:/ansible/files:ro
+      - ../ansible.cfg:/ansible/ansible.cfg:ro
+      # SSH keys (read-write for both profiles)
+      - ../files/ssh_keys:/ansible/files/ssh_keys:rw
+      # Azure credentials (if using Azure CLI)
+      - ~/.azure:/home/ansible/.azure:ro
+    environment:
+      - ANSIBLE_HOST_KEY_CHECKING=False
+      - ANSIBLE_STDOUT_CALLBACK=yaml
+      # Azure credentials
+      - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID:-}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_SECRET=${AZURE_SECRET:-}
+      - AZURE_TENANT=${AZURE_TENANT:-}
+      # ISE credentials
+      - ISE_REST_USERNAME=${ISE_REST_USERNAME:-iseadmin}
+      - ISE_REST_PASSWORD=${ISE_REST_PASSWORD:-}
+      - ISE_VERIFY=${ISE_VERIFY:-False}
+      - ISE_DEBUG=${ISE_DEBUG:-False}
+      - ANSIBLE_CRYPTO_OPENSSH_KEYPAIR_CHATTR=false
+      - ANSIBLE_CRYPTO_OPENSSH_KEYPAIR_USE_CHATTR=false
+      - ANSIBLE_CRYPTO_OPENSSH_KEYPAIR_USE_ATTR=false
+      - ANSIBLE_UNSAFE_WRITES=true
+    env_file:
+      - ../.env
+    stdin_open: true
+    tty: true
+    user: root
+    networks:
+      - iseble_net
+
+networks:
+  iseble_net:
+    driver: bridge

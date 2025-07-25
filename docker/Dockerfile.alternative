@@ -1,0 +1,53 @@
+FROM ubuntu:24.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies and add Ansible PPA
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    python3-pip \
+    git \
+    curl \
+    vim \
+    openssh-client \
+    openssh-server \
+    sshpass \
+    && add-apt-repository --yes --update ppa:ansible/ansible \
+    && apt-get install -y ansible \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create ansible user with dynamic UID (will be set at runtime)
+RUN useradd -m -s /bin/bash ansible
+
+# Switch to ansible user for collections/modules installation
+USER ansible
+
+# Install Ansible collections and dependencies
+RUN ansible-galaxy collection install azure.azcollection --force
+RUN ansible-galaxy collection install cisco.ise --force
+
+# Install Python dependencies
+RUN pip3 install --user --break-system-packages ciscoisesdk
+RUN pip3 install --user --break-system-packages -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
+
+# Create working directory and ensure tmp directory exists
+WORKDIR /ansible
+RUN mkdir -p /tmp/.ansible && chmod 777 /tmp/.ansible
+USER root
+RUN mkdir -p /ansible/files/ssh_keys && chmod 755 /ansible/files/ssh_keys
+USER ansible
+
+# Set up default ansible.cfg for container
+RUN echo '[defaults]' > /ansible/ansible.cfg && \
+    echo 'host_key_checking = False' >> /ansible/ansible.cfg && \
+    echo 'retry_files_enabled = False' >> /ansible/ansible.cfg && \
+    echo 'stdout_callback = yaml' >> /ansible/ansible.cfg && \
+    echo 'local_tmp = /tmp/.ansible' >> /ansible/ansible.cfg && \
+    echo 'remote_tmp = /tmp/.ansible' >> /ansible/ansible.cfg
+
+# Ensure PATH includes user's local bin
+ENV PATH="/home/ansible/.local/bin:$PATH"
+
+# Default command
+CMD ["bash"]
