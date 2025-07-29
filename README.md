@@ -7,8 +7,6 @@ Core principles:
 - Modularity
 - User Experience
 
-I am also working on [Iseble for AWS](link?) which follows the same core principles.
-
 ## Quick Start
 
 ```bash
