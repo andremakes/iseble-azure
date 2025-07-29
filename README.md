@@ -184,7 +184,7 @@ iseble-azure/
 > **Note**
 > This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
 
-- **ISE GUI Readiness check**
+- **ISE GUI Readiness Check**
 
 ### Phase 4: VPN (Optional) (04-create-vpn.yml)
 > **Note**
