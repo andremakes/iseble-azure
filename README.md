@@ -134,7 +134,7 @@ ansible-galaxy collection install -r collections/requirements.yml
 Edit `vars/main.yml` to customize your deployment:
 ```bash
 # Edit the main variables file
-nano vars/main.yml
+vim vars/main.yml
 ```
 
 Key variables to review:
