@@ -6,6 +6,7 @@ Core principles:
 - Simplicity
 - Modularity
 - User Experience
+- Production-ready (Dockerized)
 
 ## Quick Start
 
