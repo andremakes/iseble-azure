@@ -72,7 +72,7 @@ AZURE_CLIENT_ID=your-client-id
 AZURE_SECRET=your-client-secret
 
 # ISE Configuration (optional)
-ISE_PASSWORD=ISEisC00LISE
+ISE_PASSWORD=ISEisC00L
 ISE_DOMAIN=local
 
 # VPN Configuration (optional)
