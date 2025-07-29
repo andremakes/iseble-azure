@@ -121,14 +121,8 @@ ansible-galaxy collection install azure.azcollection --force
 sudo pip3 install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
 ```
 
-### 2. Install Project Dependencies
-```bash
-# Install Ansible collections
-./setup.sh
-
-# Or manually install collections
-ansible-galaxy collection install -r collections/requirements.yml
-```
+### 2. Install on Docker
+See [README](docker/README.md) in the docker folder.
 
 ### 3. Configure Variables
 Edit `vars/main.yml` to customize your deployment:
