@@ -40,7 +40,7 @@ If you need more details, read on.
 - **Service principal** with Contributor role
 - **ISE image** available in your region (`cisco-ise_3_4`)
 
-## 🔧 Azure Authentication Setup
+## Azure Authentication Setup
 
 ### Method 1: Service Principal Authentication (Recommended)
 
@@ -184,21 +184,11 @@ iseble-azure/
 > **Note**
 > This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
 
-- **SCP Repository** creation for backups/patches
-- **Network Access Devices** (switches, APs) registration
-- **Endpoint Identity Groups** (Corporate, Guest, IoT, BYOD)
-- **Guest Portal** with self-registration
-- **BYOD Portal** for employee device registration
-- **Authorization Policies** for network access control
+- **ISE VM Readiness check**
 
 ### Phase 4: VPN (Optional) (04-create-vpn.yml)
 > **Note**
 > This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
-
-- **VPN Gateway** public IP
-- **Virtual Network Gateway**
-- **Local Network Gateway**
-- **VPN Connection**
 
 ## Architecture
 
