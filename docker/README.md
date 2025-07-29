@@ -189,12 +189,6 @@ docker/
 ├── debug-paths.sh         # Debug script for troubleshooting
 ├── requirements.txt       # Python dependencies (copied from root)
 ├── README.md              # This file
-└── archive/               # Archived old Docker files
-    ├── Dockerfile.dev
-    ├── Dockerfile.prod
-    ├── docker-compose.dev.yml
-    ├── docker-compose.prod.yml
-    └── scripts/
 ```
 
 ## Environment Differences
@@ -279,27 +273,6 @@ If you're currently using the virtual environment approach:
 2. **Set environment variables**: Export Azure credentials
 3. **Run playbooks**: Use Docker commands instead of `ansible-playbook`
 
-### Comparison with Virtual Environment
-
-| Aspect | Virtual Environment | Docker |
-|--------|-------------------|---------|
-| **Setup** | Requires Python/Ansible installation | No local dependencies |
-| **Consistency** | Environment varies by system | Identical across all systems |
-| **Isolation** | Uses system Python | Complete isolation |
-| **Portability** | Limited to similar systems | Works on any Docker host |
-| **Resource Usage** | Minimal | Container overhead |
-| **Development** | Direct file access | Volume mounting required |
-
-## Benefits of Docker Approach
-
-### Advantages
-- **Consistent environment**: Same setup across all machines
-- **No local dependencies**: No need to install Python/Ansible locally
-- **Isolation**: Clean environment for each run
-- **Team collaboration**: Easy to share and standardize
-- **Version control**: Exact dependency versions
-- **Quick setup**: One command to get started
-
 ### When to Use Each Approach
 
 **Use Simple Docker when:**
@@ -312,21 +285,3 @@ If you're currently using the virtual environment approach:
 - Production deployments
 - Complex volume mounting needed
 - CI/CD integration
-
-## Archive
-
-The `archive/` directory contains the previous complex Docker setup with separate dev/prod files. This approach was more complex than needed for this project, but is preserved for reference.
-
-## Recent Updates
-
-### Latest Changes
-- **Fixed requirements.txt handling**: Now properly copies from root project
-- **Improved Dockerfile**: Better error handling and dependency management
-- **Updated documentation**: Reflects current project structure
-- **Enhanced troubleshooting**: Better debugging information
-
-### Known Issues Resolved
-- ✅ SSH key generation permissions
-- ✅ Requirements file copying
-- ✅ Container environment variables
-- ✅ Volume mounting permissions
