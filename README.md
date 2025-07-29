@@ -30,7 +30,7 @@ If you need more details, read on.
 
 ### System Requirements
 - **Ubuntu Linux** (recommended) or other Linux distribution
-- **Ansible** 2.15+ with Python 3.8+
+- **Ansible** 2.15+ with Python 3.12
 - **Azure CLI** configured with service principal
 - **SSH key** management capability
 - **Network connectivity** to Azure and target devices
