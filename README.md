@@ -1,28 +1,34 @@
-# Cisco ISE Azure Deployment Automation
+# Iseble for Azure
 
-This project provides comprehensive Ansible automation for deploying and configuring Cisco Identity Services Engine (ISE) 3.4 on Microsoft Azure. ISEBLE stands for "ISE on Ansible".
+Iseble, an anthropomorphic name derived from the fusion of [Cisco ISE](https://www.cisco.com/site/us/en/products/security/identity-services-engine/index.html) and [Ansible](https://docs.ansible.com/), is a project tailored for [Azure](https://azure.microsoft.com/en-us/products/cloud-services/) and does not utilize [ARM templates](https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/overview).
 
-## 🚀 Quick Start
+Core principles:
+- Simplicity
+- Modularity
+- User Experience
 
-1. **Set up Azure authentication**
-2. **Install dependencies**
-3. **Run the playbooks**
+I am also working on [Iseble for AWS](link?) which follows the same core principles.
+
+## Quick Start
 
 ```bash
-# Install Ansible collections
-./setup.sh
 
-# Deploy infrastructure
+# Create Python Virtual Environment
+./venv_create.sh
+
+# Run the playbooks
 ansible-playbook playbooks/01-create-infrastructure.yml
-
-# Deploy ISE VM
 ansible-playbook playbooks/02-deploy-ise.yml
-
-# Configure ISE
 ansible-playbook playbooks/03-configure-ise.yml
-```
+ansible-playbook playbooks/98-destroy-ise-only.yml
+ansible-playbook playbooks/99-destroy-resources.yml
 
-## 📋 Prerequisites
+# Delete Python Virtual Environment
+./delete_create.sh
+```
+If you need more details, read on.
+
+## Prerequisites
 
 ### System Requirements
 - **Ubuntu Linux** (recommended) or other Linux distribution
@@ -96,7 +102,7 @@ If running on an Azure VM or in Azure Container Instances:
 # Ensure the VM has appropriate permissions assigned
 ```
 
-## 🛠 Installation and Setup
+## Installation and Setup
 
 ### 1. Install System Dependencies (Ubuntu)
 ```bash
@@ -136,7 +142,7 @@ Key variables to review:
 - `azure.region`: Change Azure region if needed (default: "westus")
 - `ise.vm_size`: Change VM size if needed (default: "Standard_D4s_v3")
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 iseble-azure/
@@ -165,44 +171,44 @@ iseble-azure/
 └── README.md                        # This file
 ```
 
-## 🎯 Deployment Workflow
+## Deployment Workflow
 
 ### Phase 1: Infrastructure (01-create-infrastructure.yml)
-- ✅ **SSH Key** generation and management
-- ✅ **Azure Resource Group** creation
-- ✅ **Virtual Network** with subnets (192.168.100.0/23)
-- ✅ **Network Security Group** with ISE rules
-- ✅ **Storage Account** for boot diagnostics
-- ✅ **Public IP** and network interface
+- **SSH Key** generation and management
+- **Azure Resource Group** creation
+- **Virtual Network** with subnets (192.168.100.0/23)
+- **Network Security Group** with ISE rules
+- **Storage Account** for boot diagnostics
+- **Public IP** and network interface
 
 ### Phase 2: ISE Deployment (02-deploy-ise.yml)
-- ✅ **Virtual Machine** deployment with ISE image
-- ✅ **SSH Key** injection for secure access
-- ✅ **User Data** configuration for ISE initialization
-- ✅ **Boot Diagnostics** enablement
-- ✅ **Deployment Validation** and status reporting
+- **Virtual Machine** deployment with ISE image
+- **SSH Key** injection for secure access
+- **User Data** configuration for ISE initialization
+- **Boot Diagnostics** enablement
+- **Deployment Validation** and status reporting
 
 ### Phase 3: ISE Configuration (03-configure-ise.yml)
 > **Note**
 > This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
 
-- ✅ **SCP Repository** creation for backups/patches
-- ✅ **Network Access Devices** (switches, APs) registration
-- ✅ **Endpoint Identity Groups** (Corporate, Guest, IoT, BYOD)
-- ✅ **Guest Portal** with self-registration
-- ✅ **BYOD Portal** for employee device registration
-- ✅ **Authorization Policies** for network access control
+- **SCP Repository** creation for backups/patches
+- **Network Access Devices** (switches, APs) registration
+- **Endpoint Identity Groups** (Corporate, Guest, IoT, BYOD)
+- **Guest Portal** with self-registration
+- **BYOD Portal** for employee device registration
+- **Authorization Policies** for network access control
 
 ### Phase 4: VPN (Optional) (04-create-vpn.yml)
 > **Note**
 > This playbook is a work in progress and will be updated with additional configuration tasks for Cisco ISE.
 
-- ✅ **VPN Gateway** public IP
-- ✅ **Virtual Network Gateway**
-- ✅ **Local Network Gateway**
-- ✅ **VPN Connection**
+- **VPN Gateway** public IP
+- **Virtual Network Gateway**
+- **Local Network Gateway**
+- **VPN Connection**
 
-## 🏗 Architecture
+## Architecture
 
 ### Network Configuration
 - **Region**: westus2
@@ -218,106 +224,17 @@ iseble-azure/
 
 ### ISE Configuration
 - **VM Size**: Standard_D4s_v3 (4 vCPUs, 16 GB RAM)
-- **OS Disk**: 100 GB Premium SSD
+- **OS Disk**: 300 GB Premium SSD
 - **Image**: cisco-ise_3_4 (latest)
 - **Admin User**: iseadmin
 - **Services**: ERS API, Open API, PXGrid, PXGrid Cloud
 
-## 🔐 Security Configuration
-
-### Network Security Groups
-- **SSH (22)**: Administrative access
-- **HTTPS (443)**: Web interface
-- **ERS API (9060)**: REST API access
-- **RADIUS (1812/1813)**: Authentication traffic
-- **PXGrid (8910)**: Context sharing
-
-### ISE Security Features
-- **SSH Key Authentication**: Password-less access
-- **Repository Encryption**: Secure file transfers
-- **RADIUS Shared Secrets**: Device authentication
-- **TrustSec Integration**: Secure Group Tags
-
-## 📊 Configured Components
-
-### Repositories
-- **Backup Repository**: SCP-based configuration backups
-- **Patch Repository**: Software update distribution
-
-### Network Devices
-- **Core-Switch-01**: Primary network switch (192.168.1.10)
-- **Access-Point-01**: Wireless controller (192.168.1.20)
-
-### Endpoint Groups
-- **Corporate-Devices**: Company managed devices
-- **Guest-Devices**: Visitor device access
-- **IoT-Devices**: Internet of Things devices
-- **BYOD-Devices**: Employee personal devices
-
-### Portals
-- **Guest Portal**: Self-service guest registration
-- **BYOD Portal**: Employee device registration
-
-### Authorization Policies
-- **Corporate_Device_Access**: Full network access
-- **Guest_Device_Access**: Internet-only access
-- **BYOD_Device_Access**: Controlled access
-
-## 🌐 Access Information
-
-After successful deployment:
-
-### Web Interfaces
-- **ISE Admin**: `https://[PUBLIC_IP]/admin`
-- **Guest Portal**: `https://[PUBLIC_IP]:8443/guestportal`
-- **BYOD Portal**: `https://[PUBLIC_IP]:8443/mydevices`
-
-### API Endpoints
-- **ERS API**: `https://[PUBLIC_IP]/ers`
-- **Open API**: `https://[PUBLIC_IP]/api/v1`
-
-### SSH Access
-```bash
-ssh -i files/ssh_keys/iseble-azure iseadmin@[PUBLIC_IP]
-```
-
-## 🛠 Customization
+## Customization
 
 ### Modifying Variables
-Edit `vars/main.yml` to customize:
-- Network device configurations
-- Portal branding and settings
-- Authorization policy rules
-- Repository configurations
+Edit `vars/main.yml` to adjust the project to your environment.
 
-### Adding Network Devices
-```yaml
-network_devices:
-  - name: "Your-Device-Name"
-    ip_address: "192.168.1.100"
-    shared_secret: "DeviceSecret123!"
-    description: "Your device description"
-    device_type: "Device Type#All Device Types#Switch"
-    location: "All Locations#Your Site#Your Location"
-```
-
-### Custom Authorization Policies
-```yaml
-authorization_policies:
-  - policy_name: "Your_Policy_Name"
-    description: "Your policy description"
-    rule:
-      condition:
-        condition_type: "ConditionAndBlock"
-        conditions:
-          - condition_type: "ConditionReference"
-            condition_id: "Your condition"
-      result:
-        - "PermitAccess"
-        - "DACL:YOUR_DACL"
-```
-
-## 🧹 Cleanup and Maintenance
+## Cleanup and Maintenance
 
 ### Destroy ISE VM Only (Preserves Infrastructure)
 ```bash
@@ -342,9 +259,7 @@ But preserve:
 ansible-playbook playbooks/99-destroy-resources.yml
 ```
 
-
-
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -443,32 +358,17 @@ az network public-ip show --resource-group rg-iseble-azure --name pip-iseble-azu
 - **Azure Logs**: Azure Portal → Resource → Activity Log
 - **ISE Logs**: ISE Admin → Operations → Reports → Diagnostics
 
-## 🐳 Docker Support
+## Docker Support
 
 For Docker-based deployment, see the [docker/README.md](docker/README.md) file for complete documentation.
 
-## 📚 Documentation References
+## Documentation References
 
 - [Cisco ISE 3.4 Administration Guide](https://www.cisco.com/c/en/us/support/security/identity-services-engine/products-installation-and-configuration-guides-list.html)
 - [Ansible Cisco ISE Collection](https://galaxy.ansible.com/cisco/ise)
 - [Azure Ansible Collection](https://galaxy.ansible.com/azure/azcollection)
 - [Azure ISE Documentation](https://docs.microsoft.com/en-us/azure/virtual-machines/linux/cisco-ise)
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For issues and questions:
-1. Check the troubleshooting section above
-2. Review Ansible and Azure documentation
-3. Open an issue with detailed logs and configuration
