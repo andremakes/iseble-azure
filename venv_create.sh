@@ -29,6 +29,46 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Check and install required packages for virtual environment
+check_and_install_packages() {
+    print_status "Checking for required packages..."
+
+    # Check if we're on a Debian/Ubuntu system
+    if [[ -f /etc/debian_version ]]; then
+        print_status "Detected Debian/Ubuntu system"
+
+        # Check if python3-venv is installed
+        if ! dpkg -l | grep -q python3-venv; then
+            print_warning "python3-venv package not found. Installing required packages..."
+
+            # Check if we have sudo privileges
+            if [[ $EUID -eq 0 ]]; then
+                print_status "Running as root, updating package lists..."
+                apt update
+                print_status "Installing python3-venv..."
+                apt install -y python3-venv
+            else
+                print_status "Requesting sudo privileges to install packages..."
+                sudo apt update
+                print_status "Installing python3-venv..."
+                sudo apt install -y python3-venv
+            fi
+
+            if [[ $? -eq 0 ]]; then
+                print_success "python3-venv installed successfully!"
+            else
+                print_error "Failed to install python3-venv. Please install it manually:"
+                print_error "  sudo apt update && sudo apt install python3-venv"
+                exit 1
+            fi
+        else
+            print_success "python3-venv package already installed"
+        fi
+    else
+        print_warning "Not a Debian/Ubuntu system. Please ensure python3-venv is installed manually."
+    fi
+}
+
 # Check if Python 3.12 is available
 check_python() {
     print_status "Checking for Python 3.12..."
@@ -163,6 +203,7 @@ main() {
     echo -e "${BLUE}================================${NC}"
     echo
 
+    check_and_install_packages
     check_python
     check_existing_venv
     create_venv
